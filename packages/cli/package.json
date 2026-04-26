@@ -9,7 +9,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit",
-    "test": "echo 'no tests yet'"
+    "test": "vitest run"
   },
   "dependencies": {
     "@crawler/core": "workspace:*",
@@ -17,5 +17,8 @@
     "@crawler/dev-to": "workspace:*",
     "@crawler/hacker-news": "workspace:*",
     "commander": "^14.0.3"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.5"
   }
 }

@@ -33,6 +33,10 @@ export class DailyDevCrawler implements Crawler {
       const raw = await this.client.request<unknown>(query, variables);
       const parsed = FeedResponseSchema.parse(raw);
 
+      // Defensive: empty page = upstream has nothing more, stop regardless
+      // of hasNextPage (some APIs lie). Prevents infinite loop.
+      if (parsed.page.edges.length === 0) break;
+
       for (const edge of parsed.page.edges) {
         if (yielded >= limit) break;
         yield mapPostToArticle(edge.node);
@@ -40,8 +44,10 @@ export class DailyDevCrawler implements Crawler {
       }
 
       if (!parsed.page.pageInfo.hasNextPage) break;
-      cursor = parsed.page.pageInfo.endCursor;
-      if (!cursor) break;
+      const nextCursor = parsed.page.pageInfo.endCursor;
+      // Cursor must advance — otherwise we'd refetch the same page forever.
+      if (!nextCursor || nextCursor === cursor) break;
+      cursor = nextCursor;
     }
   }
 

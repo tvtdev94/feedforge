@@ -99,4 +99,21 @@ describe('ArticleRepository', () => {
     expect(repo.count('daily-dev')).toBe(1);
     expect(repo.count('other-site')).toBe(1);
   });
+
+  it('preserves original crawled_at on re-upsert (first-seen semantics)', () => {
+    repo.upsert(makeArticle({ crawledAt: '2026-01-01T00:00:00.000Z' }));
+    repo.upsert(makeArticle({ crawledAt: '2026-12-31T00:00:00.000Z' }));
+    const rows = repo.list({ source: 'daily-dev' });
+    expect(rows[0]?.crawled_at).toBe('2026-01-01T00:00:00.000Z');
+  });
+
+  it('upsertMany handles mixed inserts/updates atomically', () => {
+    repo.upsert(makeArticle({ id: 'a', externalId: 'a', title: 'orig' }));
+    const result = repo.upsertMany([
+      makeArticle({ id: 'a-new', externalId: 'a', title: 'updated' }),
+      makeArticle({ id: 'b', externalId: 'b' }),
+    ]);
+    expect(result).toEqual({ inserted: 1, updated: 1 });
+    expect(repo.count('daily-dev')).toBe(2);
+  });
 });

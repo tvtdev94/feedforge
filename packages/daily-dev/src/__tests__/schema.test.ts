@@ -27,4 +27,15 @@ describe('FeedResponseSchema', () => {
       }),
     ).toThrow();
   });
+
+  it('rejects non-URL strings in url field', () => {
+    expect(() =>
+      FeedResponseSchema.parse({
+        page: {
+          pageInfo: { hasNextPage: false, endCursor: null },
+          edges: [{ node: { id: 'x', url: 'not-a-url', title: 't' } }],
+        },
+      }),
+    ).toThrow();
+  });
 });

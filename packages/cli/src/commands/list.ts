@@ -57,11 +57,7 @@ export async function runList(args: ListArgs): Promise<void> {
         console.log(`  tags: ${tags.join(', ')}`);
       }
       if (row.summary) {
-        const summary =
-          args.truncate !== null && row.summary.length > args.truncate
-            ? row.summary.slice(0, args.truncate - 3) + '...'
-            : row.summary;
-        console.log(`  > ${summary}`);
+        console.log(`  > ${truncateSummary(row.summary, args.truncate)}`);
       }
       console.log();
     }
@@ -71,4 +67,12 @@ export async function runList(args: ListArgs): Promise<void> {
   } finally {
     db.close();
   }
+}
+
+/** Truncate `summary` to `max` chars total. For `max < 4` the ellipsis won't
+ *  fit, so hard-slice without the marker. */
+export function truncateSummary(summary: string, max: number | null): string {
+  if (max === null || summary.length <= max) return summary;
+  if (max < 4) return summary.slice(0, max);
+  return summary.slice(0, max - 3) + '...';
 }

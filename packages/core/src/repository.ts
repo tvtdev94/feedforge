@@ -59,6 +59,8 @@ export class ArticleRepository {
       `SELECT id FROM articles WHERE source = ? AND external_id = ?`,
     );
 
+    // crawled_at is intentionally NOT updated — it preserves the
+    // first-seen timestamp so list ordering stays stable on re-crawl.
     this.updateStmt = db.prepare(`
       UPDATE articles SET
         url = @url,
@@ -70,7 +72,6 @@ export class ArticleRepository {
         publisher_image = @publisherImage,
         image_url = @imageUrl,
         published_at = @publishedAt,
-        crawled_at = @crawledAt,
         raw_json = @rawJson
       WHERE id = @id
     `);
@@ -105,7 +106,8 @@ export class ArticleRepository {
         | undefined;
 
       if (existing) {
-        this.updateStmt.run({ ...this.toRowParams(a), id: existing.id });
+        const { crawledAt: _drop, ...updateParams } = this.toRowParams(a);
+        this.updateStmt.run({ ...updateParams, id: existing.id });
         this.replaceTags(existing.id, a.tags);
         return { id: existing.id, inserted: false };
       }
@@ -117,15 +119,31 @@ export class ArticleRepository {
     return tx(article);
   }
 
+  /** Batched upsert: single transaction across the whole iterable so 1000
+   *  articles → 1 fsync instead of 1000. Falls through to per-row `upsert`
+   *  for the actual SQL. */
   upsertMany(articles: Iterable<Article>): { inserted: number; updated: number } {
-    let inserted = 0;
-    let updated = 0;
-    for (const a of articles) {
-      const r = this.upsert(a);
-      if (r.inserted) inserted++;
-      else updated++;
-    }
-    return { inserted, updated };
+    const tx = this.db.transaction((items: Iterable<Article>) => {
+      let inserted = 0;
+      let updated = 0;
+      for (const a of items) {
+        const existing = this.findIdStmt.get(a.source, a.externalId) as
+          | { id: string }
+          | undefined;
+        if (existing) {
+          const { crawledAt: _drop, ...updateParams } = this.toRowParams(a);
+          this.updateStmt.run({ ...updateParams, id: existing.id });
+          this.replaceTags(existing.id, a.tags);
+          updated++;
+        } else {
+          this.insertStmt.run(this.toRowParams(a));
+          this.replaceTags(a.id, a.tags);
+          inserted++;
+        }
+      }
+      return { inserted, updated };
+    });
+    return tx(articles);
   }
 
   list(opts: ListOptions): ArticleRow[] {

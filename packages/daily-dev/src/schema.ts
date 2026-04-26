@@ -4,11 +4,11 @@ import { z } from 'zod';
  *  can return is preserved via `rawJson` in the mapper. */
 export const PostNodeSchema = z.object({
   id: z.string(),
-  url: z.string(),
-  permalink: z.string().nullable().optional(),
+  url: z.string().url(),
+  permalink: z.string().url().nullable().optional(),
   title: z.string(),
   summary: z.string().nullable().optional(),
-  image: z.string().nullable().optional(),
+  image: z.string().url().nullable().optional(),
   createdAt: z.string().nullable().optional(),
   tags: z.array(z.string()).nullable().optional(),
   source: z

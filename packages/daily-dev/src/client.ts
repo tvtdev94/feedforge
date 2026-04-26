@@ -42,16 +42,16 @@ export class DailyDevClient {
     query: string,
     variables: Record<string, unknown>,
   ): Promise<T> {
-    await this.throttle();
-
     let attempt = 0;
     let lastError: unknown;
     while (attempt < this.opts.maxRetries) {
       attempt++;
+      // Throttle inside the loop so retries also respect the rate limit
+      // (backoff alone can be < throttleMs and hammer 429s).
+      await this.throttle();
       const ac = new AbortController();
       const timer = setTimeout(() => ac.abort(), this.opts.timeoutMs);
       try {
-        this.lastRequestAt = Date.now();
         const result = await this.inner.request<T>({
           document: query,
           variables,
@@ -62,7 +62,7 @@ export class DailyDevClient {
       } catch (err) {
         clearTimeout(timer);
         lastError = err;
-        if (!this.shouldRetry(err) || attempt >= this.opts.maxRetries) break;
+        if (!this.shouldRetry(err, ac.signal) || attempt >= this.opts.maxRetries) break;
         await sleep(backoffMs(attempt));
       }
     }
@@ -72,14 +72,21 @@ export class DailyDevClient {
   private async throttle(): Promise<void> {
     const wait = this.opts.throttleMs - (Date.now() - this.lastRequestAt);
     if (wait > 0) await sleep(wait);
+    // Stamp AFTER the wait so concurrent callers serialize through the gap.
+    this.lastRequestAt = Date.now();
   }
 
-  private shouldRetry(err: unknown): boolean {
+  private shouldRetry(err: unknown, signal: AbortSignal): boolean {
+    // Our own abort = timeout → retry. Anything else aborted (e.g. a future
+    // caller signal) should not be retried.
+    if (err instanceof Error && err.name === 'AbortError' && !signal.aborted) {
+      return false;
+    }
     if (err instanceof ClientError) {
       const status = err.response?.status;
       return status !== undefined && RETRYABLE_STATUS.has(status);
     }
-    // network / abort / unknown → retry
+    // network / timeout / unknown → retry
     return true;
   }
 }
