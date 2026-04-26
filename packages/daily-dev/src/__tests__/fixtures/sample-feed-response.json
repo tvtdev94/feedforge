@@ -1,0 +1,42 @@
+{
+  "page": {
+    "pageInfo": {
+      "hasNextPage": true,
+      "endCursor": "cursor-abc"
+    },
+    "edges": [
+      {
+        "node": {
+          "id": "post_1",
+          "url": "https://example.com/article-1",
+          "permalink": "https://daily.dev/posts/post_1",
+          "title": "How to Build a Crawler",
+          "summary": "A short summary of the article.",
+          "image": "https://example.com/img1.png",
+          "createdAt": "2026-04-25T10:00:00.000Z",
+          "tags": ["javascript", "webdev"],
+          "source": { "name": "example.com", "image": "https://example.com/logo.png" },
+          "author": { "name": "Alice", "username": "alice", "image": null },
+          "numUpvotes": 42,
+          "numComments": 7
+        }
+      },
+      {
+        "node": {
+          "id": "post_2",
+          "url": "https://blog.dev/post-2",
+          "permalink": null,
+          "title": "Minimal Post",
+          "summary": null,
+          "image": null,
+          "createdAt": null,
+          "tags": null,
+          "source": null,
+          "author": null,
+          "numUpvotes": null,
+          "numComments": null
+        }
+      }
+    ]
+  }
+}

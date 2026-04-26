@@ -1,0 +1,21 @@
+{
+  "name": "@crawler/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "crawler": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit",
+    "test": "echo 'no tests yet'"
+  },
+  "dependencies": {
+    "@crawler/core": "workspace:*",
+    "@crawler/daily-dev": "workspace:*",
+    "@crawler/dev-to": "workspace:*",
+    "@crawler/hacker-news": "workspace:*",
+    "commander": "^14.0.3"
+  }
+}
