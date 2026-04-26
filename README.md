@@ -88,7 +88,7 @@ crawler/
 - `article_tags` — article_id, tag.
 - Indexes: source, published_at, tag.
 
-**Dedupe**: `(source, external_id)` UNIQUE → re-running the same command yields 0 inserted, N updated.
+**Dedupe**: `(source, external_id)` UNIQUE → re-running the same command yields 0 inserted, N updated. `crawled_at` is preserved on update (first-seen semantics), so list ordering stays stable across re-crawls.
 
 ---
 
@@ -203,7 +203,7 @@ pnpm --filter @crawler/core test
 pnpm --filter @crawler/daily-dev test
 ```
 
-Current test status: **11/11 unit tests pass** (core: 6, daily-dev: 5).
+Current test status: **22/22 unit tests pass** (core: 8, daily-dev: 9, cli: 5).
 
 ---
 
