@@ -42,6 +42,9 @@ export class ArticleRepository {
   private readonly countStmt;
   private readonly tagsByArticleStmt;
 
+  private readonly findByIdStmt;
+  private readonly listSourcesStmt;
+
   constructor(private readonly db: Db) {
     this.insertStmt = db.prepare(`
       INSERT INTO articles (
@@ -58,6 +61,13 @@ export class ArticleRepository {
     this.findIdStmt = db.prepare(
       `SELECT id FROM articles WHERE source = ? AND external_id = ?`,
     );
+
+    this.findByIdStmt = db.prepare(`SELECT * FROM articles WHERE id = ?`);
+
+    this.listSourcesStmt = db.prepare(`
+      SELECT source, COUNT(*) AS count FROM articles
+      GROUP BY source ORDER BY source
+    `);
 
     // crawled_at is intentionally NOT updated — it preserves the
     // first-seen timestamp so list ordering stays stable on re-crawl.
@@ -159,6 +169,44 @@ export class ArticleRepository {
     return (this.countStmt.get(source) as { n: number }).n;
   }
 
+  findById(id: string): ArticleRow | undefined {
+    return this.findByIdStmt.get(id) as ArticleRow | undefined;
+  }
+
+  /** Cross-source query with optional source/tag/since filters. SQL is built
+   *  per-call (not cached) since clauses vary; values still go through `?`
+   *  binds so injection-safe. */
+  listAcrossSources(opts: {
+    source?: string;
+    tag?: string;
+    limit: number;
+    offset: number;
+    since?: string;
+  }): ArticleRow[] {
+    const { whereClause, params } = buildArticleWhere(opts);
+    const sql = `
+      SELECT * FROM articles
+      ${whereClause}
+      ORDER BY COALESCE(published_at, crawled_at) DESC
+      LIMIT ? OFFSET ?
+    `;
+    return this.db
+      .prepare(sql)
+      .all(...params, opts.limit, opts.offset) as ArticleRow[];
+  }
+
+  countAcrossSources(opts: { source?: string; tag?: string; since?: string }): number {
+    const { whereClause, params } = buildArticleWhere(opts);
+    const row = this.db
+      .prepare(`SELECT COUNT(*) AS n FROM articles ${whereClause}`)
+      .get(...params) as { n: number };
+    return row.n;
+  }
+
+  listSources(): { source: string; count: number }[] {
+    return this.listSourcesStmt.all() as { source: string; count: number }[];
+  }
+
   tagsOf(articleId: string): string[] {
     const rows = this.tagsByArticleStmt.all(articleId) as { tag: string }[];
     return rows.map((r) => r.tag);
@@ -190,4 +238,32 @@ export class ArticleRepository {
       rawJson: a.rawJson,
     };
   }
+}
+
+/** Build a parameterized WHERE clause for cross-source article queries.
+ *  Single source of truth shared by `listAcrossSources` and
+ *  `countAcrossSources` so they can never disagree on filter semantics. */
+function buildArticleWhere(opts: {
+  source?: string;
+  tag?: string;
+  since?: string;
+}): { whereClause: string; params: unknown[] } {
+  const where: string[] = [];
+  const params: unknown[] = [];
+  if (opts.source) {
+    where.push('source = ?');
+    params.push(opts.source);
+  }
+  if (opts.tag) {
+    where.push(
+      'EXISTS (SELECT 1 FROM article_tags WHERE article_id = articles.id AND tag = ?)',
+    );
+    params.push(opts.tag);
+  }
+  if (opts.since) {
+    where.push('COALESCE(published_at, crawled_at) >= ?');
+    params.push(opts.since);
+  }
+  const whereClause = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
+  return { whereClause, params };
 }

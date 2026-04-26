@@ -116,4 +116,58 @@ describe('ArticleRepository', () => {
     expect(result).toEqual({ inserted: 1, updated: 1 });
     expect(repo.count('daily-dev')).toBe(2);
   });
+
+  it('findById returns row when exists, undefined when not', () => {
+    const r = repo.upsert(makeArticle());
+    expect(repo.findById(r.id)?.title).toBe('Hello World');
+    expect(repo.findById('nonexistent')).toBeUndefined();
+  });
+
+  it('listAcrossSources returns all without filters', () => {
+    repo.upsert(makeArticle({ id: 'a', externalId: 'a', source: 'daily-dev' }));
+    repo.upsert(makeArticle({ id: 'b', externalId: 'b', source: 'hn' }));
+    const rows = repo.listAcrossSources({ limit: 10, offset: 0 });
+    expect(rows).toHaveLength(2);
+  });
+
+  it('listAcrossSources filters by tag', () => {
+    repo.upsert(makeArticle({ id: 'a', externalId: 'a', tags: ['javascript'] }));
+    repo.upsert(makeArticle({ id: 'b', externalId: 'b', tags: ['rust'] }));
+    const rows = repo.listAcrossSources({ tag: 'rust', limit: 10, offset: 0 });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.external_id).toBe('b');
+  });
+
+  it('listAcrossSources filters by since', () => {
+    repo.upsert(
+      makeArticle({ id: 'old', externalId: 'old', publishedAt: '2025-01-01T00:00:00Z' }),
+    );
+    repo.upsert(
+      makeArticle({ id: 'new', externalId: 'new', publishedAt: '2026-06-01T00:00:00Z' }),
+    );
+    const rows = repo.listAcrossSources({
+      since: '2026-01-01T00:00:00Z',
+      limit: 10,
+      offset: 0,
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.external_id).toBe('new');
+  });
+
+  it('listSources groups correctly across sources', () => {
+    repo.upsert(makeArticle({ id: 'a', externalId: 'a', source: 'daily-dev' }));
+    repo.upsert(makeArticle({ id: 'b', externalId: 'b', source: 'daily-dev' }));
+    repo.upsert(makeArticle({ id: 'c', externalId: 'c', source: 'hn' }));
+    expect(repo.listSources()).toEqual([
+      { source: 'daily-dev', count: 2 },
+      { source: 'hn', count: 1 },
+    ]);
+  });
+
+  it('migration v2 creates jobs table', () => {
+    const rows = db
+      .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='jobs'`)
+      .all() as { name: string }[];
+    expect(rows).toHaveLength(1);
+  });
 });

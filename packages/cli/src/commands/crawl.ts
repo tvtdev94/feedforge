@@ -1,59 +1,80 @@
-import { ArticleRepository, openDb } from '@crawler/core';
-import type { CrawlOptions } from '@crawler/core';
-import { resolveDbPath } from '../db-path.js';
+import { api } from '../api-client.js';
 import { UserError } from '../errors.js';
-import { getCrawler } from '../registry.js';
 
 export interface CrawlArgs {
   site: string;
   feed: string;
   tag?: string;
   limit: number;
-  db?: string;
 }
 
+interface JobResponse {
+  id: string;
+  jobId?: string;
+  status: 'pending' | 'running' | 'done' | 'failed';
+  inserted: number;
+  updated: number;
+  error: string | null;
+}
+
+const POLL_INTERVAL_MS = 2000;
+const MAX_WAIT_MS = 5 * 60 * 1000;
+
 export async function runCrawl(args: CrawlArgs): Promise<void> {
-  const feed = parseFeed(args.feed);
-  if (feed === 'search' && !args.tag) {
+  if (args.feed === 'search' && !args.tag) {
     throw new UserError(`--tag is required when --feed=search`);
   }
   if (!Number.isFinite(args.limit) || args.limit < 1) {
     throw new UserError(`--limit must be a positive integer`);
   }
 
-  const dbPath = resolveDbPath(args.db);
-  const db = openDb(dbPath);
-  try {
-    const repo = new ArticleRepository(db);
-    const crawler = getCrawler(args.site);
+  const enqueued = await api.post<{ jobId: string; status: string }>('/crawl', {
+    site: args.site,
+    feed: args.feed,
+    tag: args.tag,
+    limit: args.limit,
+  });
+  console.log(`[${args.site}] job ${enqueued.jobId} enqueued`);
 
-    const opts: CrawlOptions = { feed, tag: args.tag, limit: args.limit };
-    console.log(
-      `[${crawler.name}] crawling: feed=${feed} tag=${args.tag ?? '-'} limit=${args.limit} db=${dbPath}`,
-    );
-
-    let inserted = 0;
-    let updated = 0;
-    let total = 0;
-    for await (const article of crawler.crawl(opts)) {
-      const r = repo.upsert(article);
-      if (r.inserted) inserted++;
-      else updated++;
-      total++;
-      if (total % 10 === 0) {
-        console.log(`  progress: ${total}/${args.limit}`);
+  const startedAt = Date.now();
+  let lastStatus = enqueued.status;
+  // Tolerate transient API hiccups (server restart mid-job, brief network
+  // blip). Job state is server-side persistent so retrying is always safe.
+  let consecutiveErrors = 0;
+  const MAX_CONSECUTIVE_ERRORS = 3;
+  while (Date.now() - startedAt < MAX_WAIT_MS) {
+    await sleep(POLL_INTERVAL_MS);
+    let job: JobResponse;
+    try {
+      job = await api.get<JobResponse>(`/crawl/${enqueued.jobId}`);
+      consecutiveErrors = 0;
+    } catch (err) {
+      consecutiveErrors++;
+      if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+        throw err;
       }
+      console.log(`  poll ${consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS} failed, retrying...`);
+      continue;
     }
-
-    console.log(
-      `[${crawler.name}] done. inserted=${inserted} updated=${updated} total=${total}`,
-    );
-  } finally {
-    db.close();
+    if (job.status !== lastStatus) {
+      console.log(`  status=${job.status}`);
+      lastStatus = job.status;
+    }
+    if (job.status === 'done') {
+      console.log(
+        `[${args.site}] done. inserted=${job.inserted} updated=${job.updated}`,
+      );
+      return;
+    }
+    if (job.status === 'failed') {
+      throw new UserError(`crawl failed: ${job.error ?? 'unknown error'}`);
+    }
   }
+  throw new UserError(
+    `crawl timed out after ${MAX_WAIT_MS / 1000}s (job still pending/running)`,
+  );
 }
 
-function parseFeed(value: string): 'popular' | 'search' {
-  if (value === 'popular' || value === 'search') return value;
-  throw new UserError(`--feed must be 'popular' or 'search' (got '${value}')`);
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

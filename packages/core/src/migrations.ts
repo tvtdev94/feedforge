@@ -39,4 +39,24 @@ export const MIGRATIONS: Migration[] = [
       CREATE INDEX IF NOT EXISTS idx_article_tags_tag      ON article_tags(tag);
     `,
   },
+  {
+    version: 2,
+    sql: `
+      CREATE TABLE IF NOT EXISTS jobs (
+        id           TEXT PRIMARY KEY,
+        site         TEXT NOT NULL,
+        feed         TEXT NOT NULL,
+        tag          TEXT,
+        limit_n      INTEGER NOT NULL,
+        status       TEXT NOT NULL CHECK(status IN ('pending','running','done','failed')),
+        inserted     INTEGER NOT NULL DEFAULT 0,
+        updated      INTEGER NOT NULL DEFAULT 0,
+        error        TEXT,
+        enqueued_at  TEXT NOT NULL,
+        started_at   TEXT,
+        completed_at TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
+    `,
+  },
 ];

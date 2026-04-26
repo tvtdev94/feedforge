@@ -10,7 +10,9 @@
     "build": "pnpm -r build",
     "typecheck": "pnpm -r exec tsc --noEmit",
     "test": "pnpm -r test",
-    "cli": "pnpm --filter @crawler/cli exec tsx src/index.ts"
+    "cli": "pnpm --filter @crawler/cli exec tsx src/index.ts",
+    "api:dev": "pnpm --filter @crawler/api dev",
+    "api:start": "pnpm --filter @crawler/api start"
   },
   "devDependencies": {
     "typescript": "^5.5.0",

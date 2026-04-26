@@ -134,6 +134,79 @@ pnpm cli list --source daily-dev --json | jq '.[].title'
 | `1` | user error (bad flag, unknown site, missing tag) |
 | `2` | runtime error (network, DB, etc.) |
 
+> **Note:** The CLI is now a thin client of `@crawler/api`. Run `pnpm api:dev` first, then export `FEEDFORGE_API_URL` + `FEEDFORGE_API_KEY` before invoking `pnpm cli`. See the **API server** section below.
+
+---
+
+## API server
+
+`@crawler/api` (Hono on Node) exposes feedforge data over HTTP so other apps/scripts can call into it. Same SQLite DB as the CLI.
+
+### Quick start
+
+```bash
+cp packages/api/.env.example packages/api/.env
+# edit packages/api/.env to set strong keys
+pnpm api:dev   # boots tsx watch mode on PORT (default 3000)
+```
+
+### Endpoints
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| GET | `/health` | — | Liveness check |
+| GET | `/articles?source=&tag=&limit=&offset=&since=` | read | List articles, max `limit=100` |
+| GET | `/articles/:id` | read | Single article + tags |
+| GET | `/sources` | read | `[{source, count}]` |
+| POST | `/crawl` body=`{site, feed='popular', tag?, limit≤50}` | admin | Enqueue async crawl, returns 202 + jobId |
+| GET | `/crawl/:id` | admin | Job status: `pending` \| `running` \| `done` \| `failed` |
+
+Auth via `X-API-Key` header. Admin key works on every route; read key only on read endpoints.
+
+### Async POST /crawl flow
+
+1. POST creates a row in the `jobs` table → returns `{jobId, status: 'pending'}` immediately (202).
+2. An in-process worker (setImmediate, mutex-serialized) picks up pending jobs, runs the crawler, upserts articles.
+3. Poll `GET /crawl/:id` until `status` is `done` or `failed`.
+
+Job state persists in SQLite — server restart recovers gracefully (running jobs flip to failed, pending jobs resume).
+
+`limit ≤ 50` per job to keep wall time bounded (≈50s at 1 RPS throttle).
+
+### Quick smoke
+
+```bash
+# terminal A
+FEEDFORGE_READ_KEY=read-x FEEDFORGE_ADMIN_KEY=admin-x pnpm api:dev
+# terminal B
+curl -s -X POST localhost:3000/crawl \
+  -H "X-API-Key: admin-x" -H "content-type: application/json" \
+  -d '{"site":"daily-dev","limit":5}'
+# {"jobId":"job_...","status":"pending"}
+sleep 8
+curl -s localhost:3000/articles?limit=3 -H "X-API-Key: read-x"
+```
+
+### CLI as API client
+
+After starting `pnpm api:dev`:
+
+```bash
+export FEEDFORGE_API_URL=http://localhost:3000
+export FEEDFORGE_API_KEY=<admin-key>
+pnpm cli crawl daily-dev --limit 5    # POST /crawl + poll until done
+pnpm cli list --source daily-dev      # GET /articles
+```
+
+### Deploy options (free)
+
+| Host | Notes |
+|---|---|
+| Local + `cloudflared tunnel` | Free public URL, server runs on local machine |
+| Fly.io free tier | 3 shared VMs + persistent volume for SQLite |
+| Oracle Cloud Always Free | 2 ARM VMs always free, generous resources |
+| Just LAN | Skip public exposure; consume from same network |
+
 ---
 
 ## Adding a new site
@@ -203,7 +276,7 @@ pnpm --filter @crawler/core test
 pnpm --filter @crawler/daily-dev test
 ```
 
-Current test status: **22/22 unit tests pass** (core: 8, daily-dev: 9, cli: 5).
+Current test status: **50/50 unit + integration tests pass** (core: 14, daily-dev: 9, cli: 5, api: 22).
 
 ---
 

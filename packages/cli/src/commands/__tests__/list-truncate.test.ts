@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { truncateSummary } from '../list.js';
+import { truncateSummary } from '../truncate.js';
 
 describe('truncateSummary', () => {
   it('returns full summary when null max', () => {
