@@ -44,20 +44,27 @@ Default DB lives at `data/crawler.db` in the repo root.
 
 ```mermaid
 flowchart LR
+    EXT["External clients<br/>(scripts · webhooks · UIs)"]
     CLI["crawler CLI<br/>(@crawler/cli)"]
-    Core["@crawler/core<br/>types · Crawler interface · SQLite repo"]
+    API["@crawler/api<br/>Hono on Node<br/>X-API-Key auth"]
+    Worker["JobWorker<br/>setImmediate · mutex"]
+    Core["@crawler/core<br/>Repository · migrations"]
     DD["@crawler/daily-dev"]
     HN["@crawler/hacker-news (skeleton)"]
     DT["@crawler/dev-to (skeleton)"]
-    DB[(SQLite<br/>data/crawler.db)]
+    DB[(SQLite<br/>articles · article_tags · jobs)]
     DDAPI[("api.daily.dev<br/>GraphQL")]
     HNAPI[("Hacker News<br/>Firebase API")]
     DTAPI[("dev.to<br/>REST API")]
 
-    CLI -->|dispatch via registry| DD
-    CLI --> HN
-    CLI --> DT
-    CLI -->|persist articles| Core
+    CLI -->|HTTP fetch + poll| API
+    EXT -->|HTTP X-API-Key| API
+    API -->|enqueue job| Worker
+    Worker -->|dispatch via registry| DD
+    Worker --> HN
+    Worker --> DT
+    Worker -->|upsert articles| Core
+    API -->|read articles/sources/jobs| Core
     DD -->|fetch| DDAPI
     HN -. todo .-> HNAPI
     DT -. todo .-> DTAPI
@@ -79,7 +86,8 @@ crawler/
     ├── daily-dev/                  @crawler/daily-dev GraphQL client + crawler (full)
     ├── hacker-news/                @crawler/hacker-news (skeleton template)
     ├── dev-to/                     @crawler/dev-to    (skeleton template)
-    └── cli/                        @crawler/cli       commander dispatcher + registry
+    ├── api/                        @crawler/api       Hono HTTP server + jobs worker
+    └── cli/                        @crawler/cli       commander → API client (HTTP)
 ```
 
 **SQLite schema** (see `packages/core/src/migrations.ts`):
@@ -276,7 +284,7 @@ pnpm --filter @crawler/core test
 pnpm --filter @crawler/daily-dev test
 ```
 
-Current test status: **50/50 unit + integration tests pass** (core: 14, daily-dev: 9, cli: 5, api: 22).
+Current test status: **52/52 unit + integration tests pass** (core: 14, daily-dev: 9, cli: 5, api: 24).
 
 ---
 
